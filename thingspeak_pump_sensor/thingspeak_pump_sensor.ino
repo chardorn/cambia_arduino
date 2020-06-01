@@ -6,15 +6,18 @@
 
 EnergyMonitor emon1;
 
-
-
 const char* pass = "breezyshrub";
 const char* server = "mqtt.thingspeak.com";
 char mqttUserName[] = "";                // Use any name.
 char mqttPass[] = "";                 // Change to your MQTT API key from Account > MyProfile.
 long writeChannelID=1041147;
 char writeAPIKey[]   = "S537TW8F21VHNXC3";
+unsigned long beginning, finished, elapsed;
 
+#include <Servo.h>
+
+Servo myservo;  // create servo object to control a servo
+// twelve servo objects can be created on most boards
 
 WiFiClient client;                                    // Initialize the Wi-Fi client library.
 PubSubClient mqttClient( client );                    // Initialize the PuBSubClient library.
@@ -36,71 +39,128 @@ void updateRSSIValue();
 void getID(char clientID[], int idLength);
 
 double Irms = 0;
-unsigned long start, finished, elapsed;
+int update_counter = 0;
 
 void setup() {
+
 
     Serial.begin( 9600 );
     Serial.println( "Start" );
     int status = WL_IDLE_STATUS; // Set temporary Wi-Fi status.
 
     emon1.current(A0, 111.1);
-    pinMode(2, OUTPUT);
-    digitalWrite(2, LOW);
+    //pinMode(2, OUTPUT);
+    //digitalWrite(2, LOW);
+
+    myservo.attach(16);  // attaches the servo on GIO2 to the servo object
 
     // scan for existing networks:
     Serial.println("Scanning available networks...");
        
     connectWifi();  // Connect to Wi-Fi network.
     mqttClient.setServer( server, 1883 ); // Set the MQTT broker details.
+    
+    Irms = emon1.calcIrms(1480);
+    Serial.println(String(Irms));
+    Irms = emon1.calcIrms(1480);
+    Serial.println(String(Irms));
+
+    beginning == 0;
+
+    Irms = emon1.calcIrms(1480);  // Calculate Irms only
+    String dataString = "field1=" + String(Irms);
+    Serial.println(dataString);
+    mqttClient.loop(); // Call the loop to maintain connection to the server.  
+    String topicString ="channels/" + String(writeChannelID) + "/publish/"+String(writeAPIKey);
+    mqttClient.publish( topicString.c_str(), dataString.c_str() );
 
 }
 
 
 
 void loop() {
-  
-    elapsed = 0;
+
+    moveServo();
+
+    delay(1000);
     
-    if (WiFi.status() != WL_CONNECTED) {
+    update_counter += 1;
+     
+    //Every x minutes, send an update with the amperage to ensure sensor is still communicating
+    //minutes times 60 seconds
+    if(update_counter > 10 * 60){
+
+      if (WiFi.status() != WL_CONNECTED) {
         connectWifi();
-    }
+      }
     
+      if (!mqttClient.connected())
+      {
+       mqttClient.setServer( server, 1883 ); // Set the MQTT broker details.
+       mqttConnect(); // Connect if MQTT client is not connected.
+      }
+
+      Irms = emon1.calcIrms(1480);  // Calculate Irms only
+      String dataString = "field1=" + String(Irms);
+      Serial.println(dataString);
+      mqttClient.loop(); // Call the loop to maintain connection to the server.  
+      String topicString ="channels/" + String(writeChannelID) + "/publish/"+String(writeAPIKey);
+      mqttClient.publish( topicString.c_str(), dataString.c_str() );
+    
+      update_counter = 0; //reset counter
+      
+    }
+
+    Serial.print(String(update_counter) + ": ");
+    
+    
+    Irms = emon1.calcIrms(1480);      // Calculate Irms only
+    Serial.println(Irms);             // Irms
+    
+    if(Irms > 3){
+      //digitalWrite(2, HIGH);
+      //Serial.println("HIGH");
+
+      //if timer hasn't start, start
+      if(beginning == 0){
+        beginning = millis();
+        Serial.println("beginning: " + String(beginning));
+        
+        moveServo();
+              
+      }
+
+    }
+
+    else if(beginning > 0){ //and Irms < 3
+      
+      //start timer
+      finished = millis();
+      Serial.println("finished: " + String(finished));
+      elapsed = finished - beginning;
+      sendData(elapsed);
+      beginning = 0;
+      digitalWrite(2, LOW);
+    }
+    delay(200);
+    }
+
+void sendData(int elapsed) {
+
+  
+    if (WiFi.status() != WL_CONNECTED) {
+      connectWifi();
+    }
+  
     if (!mqttClient.connected())
     {
-       mqttConnect(); // Connect if MQTT client is not connected.
+     mqttClient.setServer( server, 1883 ); // Set the MQTT broker details.
+     mqttConnect(); // Connect if MQTT client is not connected.
     }
 
-    Irms = emon1.calcIrms(1480);  // Calculate Irms only
-    Serial.print(Irms*230.0);           // Apparent power
-    Serial.print(" ");
-    Serial.println(Irms);             // Irms
-    if(Irms > 3){
-      digitalWrite(2, HIGH);
-      Serial.println("HIGH");
-      start = millis();
-
-      while(1){
-        if(Irms < 3){
-          finished = millis();
-          sendData();
-        }
-      }
-    }
-    
-    else{
-     digitalWrite(2, LOW);
-    }
-
-}
-
-void sendData() {
-
-    elapsed = finished - start;
     String dataString = "field1=" + String(Irms) + "&field2= " + String(elapsed);
     Serial.println(dataString);
  
-    Serial.println(dataString);
     mqttClient.loop(); // Call the loop to maintain connection to the server.  
  
     String topicString ="channels/" + String(writeChannelID) + "/publish/"+String(writeAPIKey);
@@ -143,7 +203,7 @@ void mqttConnect()
  */
 
 void getID(char clientID[], int idLength){
-static const char alphanum[] ="0123456789"
+static const char aserlphanum[] ="0123456789"
 "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 "abcdefghijklmnopqrstuvwxyz";                        // For random generation of the client ID.
 
@@ -155,9 +215,30 @@ static const char alphanum[] ="0123456789"
     
 }
 
+void moveServo(){
+
+  Serial.println("MOVING SERVO");
+
+  myservo.attach(1);  // attaches the servo on GIO2 to the servo object
+
+  int pos;
+
+  for (pos = 0; pos <= 90; pos += 1) { // goes from 0 degrees to 180 degrees
+    // in steps of 1 degree
+    myservo.write(pos);              // tell servo to go to position in variable 'pos'
+    delay(2);                       // waits 15ms for the servo to reach the position
+  }
+  for (pos = 90; pos >= 0; pos -= 1) { // goes from 180 degrees to 0 degrees
+    myservo.write(pos);              // tell servo to go to position in variable 'pos'
+    delay(2);                       // waits 15ms for the servo to reach the position
+  }
+}
+
 void connectWifi()
 {
 
+    while (WiFi.status() != WL_CONNECTED ) {
+      
       // scan for nearby networks:
     Serial.println("** Scan Networks **");
     int numSsid = WiFi.scanNetworks();
@@ -167,11 +248,11 @@ void connectWifi()
       while(true);
     } 
 
-      // print the list of networks seen:
+    // print the list of networks seen:
     Serial.print("number of available networks:");
     Serial.println(numSsid);
     
-    while (WiFi.status() != WL_CONNECTED ) {
+    
       // print the network number and name for each network found:
       for (int thisNet = 0; thisNet<numSsid; thisNet++) {
         if(WiFi.SSID(thisNet) == "NETGEAR98"){
@@ -189,11 +270,9 @@ void connectWifi()
           delay( 5000 );
           if (WiFi.status() == 3){
             Serial.println( "Connected" );
-            //connectedToLocal = False;
             return;
           }
         }
-        
       }
     }
 }

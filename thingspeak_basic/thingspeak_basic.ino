@@ -14,14 +14,10 @@ char mqttPass[] = "";         //Optional
 long writeChannelID= 0;      //Example = 1041147
 char writeAPIKey[]   = "";    //Change to your MQTT API key from channel page > API Keys > (what's listed underneath) Write API Key
 
-
 WiFiClient client;                                    // Initialize the Wi-Fi client library.
 PubSubClient mqttClient( client );                    // Initialize the PuBSubClient library.
 
 int counter = 0;
-
-// Handle messages from MQTT subscription.
-int mqttSubscriptionCallback(char* topic, byte* payload, unsigned int length);  
 
 // Generate a unique client ID and connect to MQTT broker.
 void mqttConnect();  
@@ -35,10 +31,9 @@ void  publishMQTT();
 // Build a random client ID for MQTT connection.
 void getID(char clientID[], int idLength);
 
-
 void setup() {
 
-    Serial.begin( 9600 );
+    Serial.begin(9600);
     Serial.println( "Start" );
     int status = WL_IDLE_STATUS; // Set temporary Wi-Fi status.
 
@@ -68,7 +63,7 @@ void loop() {
 
 void publishMQTT() {
 
-    String dataString = "field1=" + counter; 
+    String dataString = "field1=" + String(counter); 
 
     //Add a second field by adding    + "&field2= " + String(data)
     Serial.println(dataString);
